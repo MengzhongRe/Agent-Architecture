@@ -308,17 +308,17 @@ LLM 自己不知道现在是几点。这是 Agent 最基础也最容易被忽略
 
 **任务清单**：
 
-- [ ] **SearchTool 测试**：
+- [x] **SearchTool 测试**：
   - 单独测试 `SearchTool().execute("Python Agent framework 2026")`，观察返回结果的格式和信息量
   - 为什么只返回 3 条结果、每条截断 200 字符？（提示：context window 预算有限）
   - 思考：如果 Agent 觉得搜索结果不够好，它的 ReAct 循环应该怎么做？
 
-- [ ] **FileReadTool / FileWriteTool 测试**：
+- [x] **FileReadTool / FileWriteTool 测试**：
   - 为什么 FileReadTool 限制了 2000 字符？（提示：非截断的大文件会直接撑爆 context window）
   - FileWriteTool 的 input 格式 `"filename|content"` 用 `|` 做分隔符——如果文件内容本身包含 `|`，这个设计有什么问题？你能想出一个更好的解决方案吗？
   - 创建一个测试文件，让 Agent 读取它并用计算器处理其中的数据
 
-- [ ] **新增一个工具（必做）**：
+- [x] **新增一个工具（必做）**：
   - 实现一个 `DateTimeTool`：返回当前日期/时间/星期。这是 Agent 最基础但最容易被忽略的工具（LLM 自己不知道"现在是什么时间"）
   - 要求：`name`、`description`、`execute` 三要素完整，description 能让 LLM 正确决策
 

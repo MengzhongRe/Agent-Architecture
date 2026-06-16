@@ -15,7 +15,6 @@ import json
 import math
 from typing import Any
 
-
 # ============================================================
 # 第1层：工具定义（Tool Definitions）
 # ============================================================
@@ -33,6 +32,26 @@ class Tool:
     def to_openai_tool(self) -> dict:
         """转换为 OpenAI 兼容的 tool 定义（后续 LangGraph 学习用）"""
         raise NotImplementedError
+
+class DateTimeTool(Tool):
+    """Datetime Tool工具,让LLM能够知道实时时间,日期.避免LLM活在训练数据的时间戳中"""
+    def __init__(self):
+        super().__init__(
+            name='datetime',
+            description=(
+                "Get the current date, time, and day of week. "
+                "Use when the user asks about today's date, current time, "
+                "or what day it is. "
+                "Returns: formatted datetime string like '2026-06-09, Monday, 15:30:45 CST'. "
+                "Note: does NOT accept parameters. For tomorrow/yesterday/next week, "
+                "call this tool first to get today, then calculate manually."
+            ),
+        )
+    
+    def execute(self, input_str: str | None = None) -> str:
+        from datetime import datetime
+        now = datetime.now()
+        return now.strftime('%Y-%m-%d %A %H:%M:%S') + ' (local time)'
 
 
 class CalculatorTool(Tool):
@@ -75,41 +94,46 @@ class CalculatorTool(Tool):
         except Exception as e:
             return f"Error: {e}"
 
-
 class SearchTool(Tool):
-    """搜索工具——使用 DuckDuckGo 进行搜索"""
+    """网络搜索工具:使用Bing搜索(国内可访问)"""
 
     def __init__(self):
-        # 同样的模式：子类不需要外部传参，所有配置锁定在内部
         super().__init__(
-            name="search",
-            description="Search the web for information. Input: a search query string.",
+            name='search',
+            description='Search the web for information. Input: a search query string.',
         )
 
     def execute(self, input_str: str) -> str:
+        import urllib.request
+        import urllib.parse
+        import re
+        import ssl
+        import certifi
+
         try:
-            # duckduckgo_search 是一个第三方库（pip install duckduckgo-search），
-            # 通过 DuckDuckGo 的 instant answer API 免费做网页搜索，无需 API Key。
-            # DDGS 是一个上下文管理器（支持 with 语句），内部管理 HTTP 连接池。
-            from duckduckgo_search import DDGS
-            with DDGS() as ddgs:
-                # .text() 执行文本搜索，返回一个生成器（generator），每次 yield 一条结果 dict。
-                # max_results=3 限制最多返回 3 条。
-                # list() 把生成器"耗尽"，转成普通列表。
-                results = list(ddgs.text(input_str, max_results=3))
-            if not results:
-                return "No results found."
-            # "\n".join(可迭代对象)：用换行符把所有结果拼成一条多行文本。
-            # f"- {r['title']}: {r['body'][:200]}..." 是生成器表达式：
-            #   - r['title']：结果标题
-            #   - r['body'][:200]：正文截取前 200 个字符（[:200] 是 Python 切片语法）
-            #   - "..." 表示正文被截断了
-            #   每条结果前加 "- " 是 Markdown 无序列表格式。
-            return "\n".join(
-                f"- {r['title']}: {r['body'][:200]}..." for r in results
-            )
-        except ImportError:
-            return "Error: duckduckgo-search not installed. Run: pip install duckduckgo-search"
+            url = "https://www.bing.com/search?" + urllib.parse.urlencode({"q": input_str})
+            ctx = ssl.create_default_context(cafile=certifi.where())
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+            })
+            with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
+                html = resp.read().decode("utf-8", errors="replace")
+
+            # 从Bing搜索结果中提取摘要片段
+            snippets = re.findall(r'<p[^>]*class="[^"]*b_lineclamp[^"]*"[^>]*>(.*?)</p>', html, re.DOTALL)
+            if not snippets:
+                # 备选: 提取所有 p 标签中的长文本
+                snippets = re.findall(r'<p[^>]*>(.*?)</p>', html, re.DOTALL)
+
+            results = []
+            for raw in snippets[:5]:
+                clean = re.sub(r"<[^>]+>", "", raw).strip()
+                if len(clean) > 30:  # 过滤太短的HTML片段
+                    results.append(f"- {clean[:200]}")
+
+            return "\n".join(results) if results else "No results found."
+        except Exception as e:
+            return f"Search error: {e}"
 
 
 class FileReadTool(Tool):
@@ -369,7 +393,7 @@ class SimpleReActAgent:
 
             observation = self.execute_tool(tool_name, tool_input)
             if verbose:
-                print(f"\n[Observation]: {observation[:300]}")
+                print(f"\n[Observation]: {observation}")
 
             # 把本轮 Thought+Action 和 Observation 追加到对话历史，让 LLM 在下一轮能"看到"发生了什么。
             #
@@ -404,7 +428,7 @@ class SimpleReActAgent:
             "content": "You have reached the maximum number of steps. \
             Please provide your final answer now based on what you've gathered.",
         })
-        final = self.llm.generate(messages)
+        final, _ = self.llm.generate(messages)
         return self.parse_response(final).get("final_answer", final)
 
 
@@ -459,10 +483,10 @@ class OllamaLLM:
 
 def create_agent(model: str = "deepseek-chat", use_local: bool = False) -> SimpleReActAgent:
     """工厂函数——创建带默认工具的 Agent"""
-    from datetime_tool import DateTimeTool
 
     tools = [
         CalculatorTool(),
+        SearchTool(),
         DateTimeTool(),
         FileReadTool(base_dir="."),
         FileWriteTool(base_dir="."),
