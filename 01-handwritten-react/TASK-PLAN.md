@@ -338,24 +338,24 @@ LLM 自己不知道现在是几点。这是 Agent 最基础也最容易被忽略
   ```
   Agent 需要：DateTimeTool → CalculatorTool。验证多工具协同。
 
-- [ ] **测试用例2（中等）**：
+- [x] **测试用例2（中等）**：
   ```bash
   python agent.py "Search for the population of Tokyo in 2024, then calculate what 15% of that number is."
   ```
   Agent 需要：SearchTool → CalculatorTool。验证"搜索结果→下游计算"的信息流动。
 
-- [ ] **测试用例3（困难）**：
+- [x] **测试用例3（困难）**：
   ```bash
   python agent.py "Search for the top 3 programming languages in 2026. Write them to a file called languages.txt. Then read the file back and tell me which one you'd recommend for an AI engineer."
   ```
   Agent 需要：SearchTool → FileWriteTool → FileReadTool。验证 3+ 步完整工作流。
 
-- [ ] **每个测试用例做完后记录**：
+- [x] **每个测试用例做完后记录**：
   - Agent 走了几步？
   - 哪一步的 Thought 最准确？哪一步明显瞎猜？
   - 如果有失败，失败的根本原因是什么？（格式解析？工具选错？上下文过长？）
 
-- [ ] **尝试用不同模型跑同样的测试用例**（如果你配置了多个 API）：
+- [x] **尝试用不同模型跑同样的测试用例**（如果你配置了多个 API）：
   - DeepSeek-V3 vs GPT-4o-mini vs 本地 Qwen2.5-7B
   - 哪个模型的 Thought 最有洞察力？哪个模型的格式遵循最稳定？
 

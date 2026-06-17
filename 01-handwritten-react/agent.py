@@ -95,46 +95,26 @@ class CalculatorTool(Tool):
             return f"Error: {e}"
 
 class SearchTool(Tool):
-    """网络搜索工具:使用Bing搜索(国内可访问)"""
+    """用ddgs网络进行搜索"""
 
     def __init__(self):
         super().__init__(
             name='search',
             description='Search the web for information. Input: a search query string.',
         )
-
+    
     def execute(self, input_str: str) -> str:
-        import urllib.request
-        import urllib.parse
-        import re
-        import ssl
-        import certifi
-
         try:
-            url = "https://www.bing.com/search?" + urllib.parse.urlencode({"q": input_str})
-            ctx = ssl.create_default_context(cafile=certifi.where())
-            req = urllib.request.Request(url, headers={
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-            })
-            with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
-                html = resp.read().decode("utf-8", errors="replace")
-
-            # 从Bing搜索结果中提取摘要片段
-            snippets = re.findall(r'<p[^>]*class="[^"]*b_lineclamp[^"]*"[^>]*>(.*?)</p>', html, re.DOTALL)
-            if not snippets:
-                # 备选: 提取所有 p 标签中的长文本
-                snippets = re.findall(r'<p[^>]*>(.*?)</p>', html, re.DOTALL)
-
-            results = []
-            for raw in snippets[:5]:
-                clean = re.sub(r"<[^>]+>", "", raw).strip()
-                if len(clean) > 30:  # 过滤太短的HTML片段
-                    results.append(f"- {clean[:200]}")
-
-            return "\n".join(results) if results else "No results found."
-        except Exception as e:
-            return f"Search error: {e}"
-
+            from ddgs import DDGS
+            with DDGS() as ddgs:
+                results = list(ddgs.text(input_str, max_results=5, backend='lite'))
+                if not results:
+                    return 'No results found!'
+                return '\n'.join(
+                    f'- {r['title']}: {r['body']}' for r in results
+                )
+        except ImportError as e:
+            return e
 
 class FileReadTool(Tool):
     """文件读取工具"""
