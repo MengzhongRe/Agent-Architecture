@@ -332,7 +332,7 @@ LLM 自己不知道现在是几点。这是 Agent 最基础也最容易被忽略
 
 **任务清单**：
 
-- [ ] **测试用例1（简单）**：
+- [x] **测试用例1（简单）**：
   ```bash
   python agent.py "What is the current time? Then calculate 3600 divided by 24."
   ```
