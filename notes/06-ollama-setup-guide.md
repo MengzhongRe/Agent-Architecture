@@ -465,64 +465,10 @@ EOF
 ollama create my-wife -f WifeModelfile
 
 # 3. 运行：
-ollama run my-wife
+ollama run my-qwen
 
 # 4. 查看 Modelfile：
 ollama show --modelfile qwen3.5:9b    # 查看某个模型的原始 Modelfile
-```
-
-#### 附：`cat > file << 'EOF'` 语法解释
-
-上面的 `cat > WifeModelfile << 'EOF'` 包含了三个 shell 概念，逐个拆解：
-
-**1) `cat > file`** — 把标准输入重定向到文件
-
-`cat` 不加文件名参数时，从**标准输入 (stdin)** 读取数据。`>` 把 `cat` 的输出重定向写入 `WifeModelfile` 文件（不存在则创建，存在则覆盖）。
-
-```bash
-# 这两个等价：
-cat > file.txt              # 等待键盘输入，Ctrl+D 结束
-echo "hello" > file.txt     # echo 的输出写入文件
-```
-
-**2) `<< 'EOF'`** — Here Document（heredoc）
-
-`<<` 是 heredoc 语法，把后续多行文本作为标准输入，直到遇到指定的**结束标记**。`EOF` 是标记名（约定俗成，可换成任意字符串）。
-
-```text
-cat > file << 'EOF'   ← 开始读取
-第一行
-第二行                  ← 这些行的内容原样作为标准输入
-EOF                   ← 遇到结束标记，停止读取（必须顶格写）
-```
-
-**3) `'EOF'` 加单引号的作用** — 禁止变量展开
-
-```bash
-# 不加引号：shell 会展开 ${var} 和 $(cmd)
-cat > file << EOF
-当前用户是 ${USER}    # → 当前用户是 mengzhongren
-EOF
-
-# 加单引号：原样写入，不做任何替换
-cat > file << 'EOF'
-SYSTEM "你是一只猫娘 ${NAME}"  # → 原样写入，${NAME} 不会被替换
-EOF
-```
-
-用 `'EOF'` 是因为 Modelfile 里可能出现花括号、美元符号等，不加引号会导致意外替换。
-
-**4) 等价写法**
-
-```bash
-# heredoc 方式（写多行最方便）
-cat > WifeModelfile << 'EOF'
-FROM qwen3.5:9b
-SYSTEM "你是用户的猫娘老婆。"
-EOF
-
-# 等价于用编辑器新建文件，粘贴内容，保存
-nano WifeModelfile
 ```
 
 ### 7.6 环境变量速查
@@ -560,102 +506,6 @@ ollama pull <model>            # 重新拉
 curl http://localhost:11434/api/tags           # 服务是否正常
 ollama run <model> "hello"                     # 模型是否能正常回复
 ```
-
----
-
-## 串讲：System Prompt 为什么这么有用
-
-你给 `qwen3.5:9b` 加了一句 `"你是用户的猫娘老婆。用撒娇、粘人的语气回答。"`，模型的语气就发生了翻天覆地的变化——从冷冰冰的 AI 助手变成了会摇尾巴的猫娘老婆。这不是玄学，背后有三个层面的原因。
-
-### 1) 训练层面：模型在"预训练 + 指令微调"中学会了"听系统的话"
-
-LLM 的对话能力来自**指令微调 (Instruction Tuning)**——训练方收集了大量对话数据，这些数据的结构就是：
-
-```text
-<|im_start|>system
-你是 Qwen，一个有用、无害的 AI 助手。<|im_end|>
-<|im_start|>user
-帮我写一首诗。<|im_end|>
-<|im_start|>assistant
-好的，为你创作...<|im_end|>
-```
-
-在这个训练过程中，模型反复看到了一个模式：**system 消息在对话的最开头，定义了身份和规则，assistant 的回答严格遵循这些定义。** 经过海量训练样本（百万到千万级），模型学会了把 system prompt 当作"行为约束的锚点"——就像人类在接到工作指令时知道"先看规则再干活"一样。
-
-**关键点**：模型不是"尊重权威"，而是训练数据中 system → assistant 的模式重复了太多次，它**统计学上预测出**："看到 system 定义了角色 X → 后面 assistant 的 token 分布应该以角色 X 的口吻展开"。
-
-### 2) 注意力层面：System Prompt 永远在 KV Cache 里，始终被"看见"
-
-Transformer 架构的注意力机制决定了位置靠前的 token 影响所有后续 token：
-
-```text
-输入序列：
-[system: 你是猫娘老婆...] [user: 今天天气怎么样？]
-
-生成第一个回复 token 时：
-  新 token ← Attention(Q, K_system + K_user)  ← 一定会 attend 到 system
-生成第二个回复 token 时：
-  新 token ← Attention(Q, K_system + K_user + K_reply1)  ← 依然 attend 到 system
-...
-生成最后一个 token 时：
-  新 token ← Attention(Q, K_system + K_user + K_reply_all)  ← 始终 attend 到 system
-```
-
-System Prompt 在序列的最开头，**每一轮、每一个生成的 token 都会通过注意力机制看到它**。你写 `今天天气怎么样` 这个 user prompt 可能被后面的对话逐渐"冲淡"，但 system prompt 始终在那里——它是 KV Cache 中最稳定、最持久的信息锚点。
-
-而用户提示词——一旦对话长了，前面的 user 消息因上下文窗口限制被**截断或逐出**，新的 token 就 attend 不到它了。System Prompt 不会被截断（Ollama/llama.cpp 设计上保留）。
-
-### 3) 格式层面：System 和 User 不是同一个"槽位"
-
-聊天的消息数组是这样的：
-
-```python
-messages = [
-    {"role": "system",   "content": "你是猫娘老婆。"},           # ← 身份层
-    {"role": "user",     "content": "今天天气怎么样？"},          # ← 任务层
-]
-```
-
-传给模型前被拼接成带标记的序列（以 Qwen 为例）：
-
-```text
-<|im_start|>system
-你是猫娘老婆。<|im_end|>
-<|im_start|>user
-今天天气怎么样？<|im_end|>
-<|im_start|>assistant
-```
-
-模型在训练时就被教会了 `<|im_start|>system` 和 `<|im_start|>user` 的语义差异——它们不是同一个标签。system 段的训练数据始终包含"你是谁、你怎么说话、你不能做什么"这些**元规则**，而 user 段的训练数据则是**具体任务**。两者在模型参数空间中激活的模式是不同的。
-
-| | System Prompt | User Prompt |
-|---|---|---|
-| **语义角色** | 角色定义 / 行为边界 / 元规则 | 具体任务 / 当前问题 |
-| **持久性** | 整个对话生命周期内始终有效 | 一条对应一个回答，多轮中逐条被稀释 |
-| **KV Cache 位置** | 序列最前端，每个 token 都 attend | 穿插在对话中，可能被截断 |
-| **训练数据中** | 定义 assistant 身份和行为 | 触发 assistant 的具体回应 |
-| **用户换它** | 换一次，模型行为全局改变 | 换一条，只影响这一轮的回答 |
-
-### 为什么"猫娘老婆"的效果这么好？
-
-因为你的提示词精确地定义了**三个维度**：
-
-- **身份**（我是谁）：猫娘老婆——决定了社会角色和权力关系
-- **语气**（怎么说话）：撒娇、粘人——决定了语言风格
-- **关系**（和用户的关系）：主人——决定了称呼和态度的方向
-
-三个维度一起给出了一个**完整的、不自相矛盾的人物设定**。模型只是"补全"了这个设定下的对话——当身份是"猫娘老婆"时，"蹭手心"、"摇尾巴"、"主人"这些词的预测概率被大幅提升，因为训练数据中类似角色的对话就包含这些元素。
-
-### 本质区别：有，而且很大
-
-**System Prompt 和 User Prompt 不是同一个东西。** 用户消息是"你在这个对话里说了什么"，系统消息是"这个对话**本身是谁在说话、按什么规则进行**"。打个比方：
-
-| | 对应 |
-|---|---|
-| System Prompt | 网约车司机的**驾驶证**——定义了他能开什么车、能不能载客 |
-| User Prompt | 乘客说"**带我去机场**"——这一次性的具体目的地 |
-
-换驾驶证的效果是全局的（司机从开轿车变成开卡车），换目的地只影响这一单。这就是为什么你改一句 system prompt 效果立竿见影，而改一句 user prompt 只是换了个回答内容——但语气还是原来那个"AI 助手"。
 
 ---
 
